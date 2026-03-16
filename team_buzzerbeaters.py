@@ -2,16 +2,16 @@ import argparse
 import os
 import sqlite3
 import sys
-import xml.etree.ElementTree as ET
 from datetime import date
 from pathlib import Path
 
 import requests
 
 from bb_xml_client import get_client
-from buzzerbeaters import find_buzzerbeaters
 from first_active_match import _schedule_matches, _parse_team_name, _sort_key, _login, _load_env
 from main import get_xml_text
+from match_package import build_play_by_play_export
+from moments import extract_team_perspective_moments
 from team_info import get_team_history_from_webpage, get_teaminfo, first_season
 
 try:
@@ -68,37 +68,33 @@ def _completed_matches(session: requests.Session, team_id: int, season: int):
     return completed, match_types, match_scores, match_seasons
 
 
-def _save_hits(db_path: str, match_id: int, match_type: str | None, match_score, season_num, hits, ht, at) -> int:
+def _save_hits(db_path: str, rows) -> int:
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
     _ensure_columns(cur)
     inserted = 0
-    for ev in hits:
-        if ev.team == 0:
-            team = ht
-            opp = at
-            is_home = 1
-        else:
-            team = at
-            opp = ht
-            is_home = 0
-
-        player_id = getattr(ev.player1obj, "id", ev.player1)
-        player_name = getattr(ev.player1obj, "name", "")
-
+    for row in rows:
         cur.execute(
             """
             INSERT INTO buzzerbeaters (
+                record_id, moment_id,
                 match_id, team_id, team_name, opponent_id, opponent_name,
+                perspective, scoring_team_id, scoring_team_name,
                 player_id, player_name, period, game_clock, comment, match_type, is_home,
                 event_kind, shot_type, shot_type_label, shot_result, free_throw_type, shot_x, shot_y, shot_distance, shot_distance_ft,
                 score_before_home, score_before_away, score_after_home, score_after_away,
+                team_score_before, opponent_score_before, team_score_after, opponent_score_after,
+                final_team_score, final_opponent_score, outcome_changed,
                 final_score_home, final_score_away, season
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(match_id, team_id, player_id, period, game_clock) DO UPDATE SET
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(record_id) DO UPDATE SET
+                moment_id=excluded.moment_id,
                 team_name=excluded.team_name,
                 opponent_id=excluded.opponent_id,
                 opponent_name=excluded.opponent_name,
+                perspective=excluded.perspective,
+                scoring_team_id=excluded.scoring_team_id,
+                scoring_team_name=excluded.scoring_team_name,
                 player_name=excluded.player_name,
                 comment=excluded.comment,
                 match_type=excluded.match_type,
@@ -116,39 +112,58 @@ def _save_hits(db_path: str, match_id: int, match_type: str | None, match_score,
                 score_before_away=excluded.score_before_away,
                 score_after_home=excluded.score_after_home,
                 score_after_away=excluded.score_after_away,
+                team_score_before=excluded.team_score_before,
+                opponent_score_before=excluded.opponent_score_before,
+                team_score_after=excluded.team_score_after,
+                opponent_score_after=excluded.opponent_score_after,
+                final_team_score=excluded.final_team_score,
+                final_opponent_score=excluded.final_opponent_score,
+                outcome_changed=excluded.outcome_changed,
                 final_score_home=excluded.final_score_home,
                 final_score_away=excluded.final_score_away,
                 season=excluded.season
             """,
             (
-                match_id,
-                team.id,
-                team.name,
-                opp.id,
-                opp.name,
-                int(player_id),
-                player_name,
-                ev.period,
-                ev.gameclock.clock,
-                ev.comment,
-                match_type,
-                is_home,
-                getattr(ev, "linked_event_kind", None),
-                getattr(ev, "shot_type", None),
-                getattr(ev, "shot_type_label", None),
-                getattr(ev, "shot_result", None),
-                getattr(ev, "free_throw_type", None),
-                getattr(ev, "shot_x", None),
-                getattr(ev, "shot_y", None),
-                getattr(ev, "shot_distance", None),
-                getattr(ev, "shot_distance_ft", None),
-                getattr(ev, "score_before_home", None),
-                getattr(ev, "score_before_away", None),
-                getattr(ev, "score_after_home", None),
-                getattr(ev, "score_after_away", None),
-                match_score[0] if match_score else None,
-                match_score[1] if match_score else None,
-                season_num,
+                row.get("record_id"),
+                row.get("moment_id"),
+                row.get("match_id"),
+                row.get("team_id"),
+                row.get("team_name"),
+                row.get("opponent_id"),
+                row.get("opponent_name"),
+                row.get("perspective"),
+                row.get("scoring_team_id"),
+                row.get("scoring_team_name"),
+                row.get("player_id"),
+                row.get("player_name"),
+                row.get("period"),
+                row.get("gameclock"),
+                row.get("comment"),
+                row.get("match_type"),
+                1 if row.get("is_home") else 0,
+                row.get("event_kind"),
+                row.get("shot_type"),
+                row.get("shot_type_label"),
+                row.get("shot_result"),
+                row.get("free_throw_type"),
+                row.get("shot_x"),
+                row.get("shot_y"),
+                None,
+                row.get("shot_distance_ft"),
+                row.get("score_before_home"),
+                row.get("score_before_away"),
+                row.get("score_after_home"),
+                row.get("score_after_away"),
+                row.get("team_score_before"),
+                row.get("opponent_score_before"),
+                row.get("team_score_after"),
+                row.get("opponent_score_after"),
+                row.get("final_team_score"),
+                row.get("final_opponent_score"),
+                1 if row.get("outcome_changed") else 0,
+                row.get("final_score_home"),
+                row.get("final_score_away"),
+                row.get("season"),
             ),
         )
         if cur.rowcount:
@@ -162,11 +177,16 @@ def _ensure_columns(cur: sqlite3.Cursor) -> None:
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS buzzerbeaters (
+            record_id TEXT,
+            moment_id TEXT,
             match_id INTEGER,
             team_id INTEGER,
             team_name TEXT,
             opponent_id INTEGER,
             opponent_name TEXT,
+            perspective TEXT,
+            scoring_team_id INTEGER,
+            scoring_team_name TEXT,
             player_id INTEGER,
             player_name TEXT,
             period TEXT,
@@ -187,6 +207,13 @@ def _ensure_columns(cur: sqlite3.Cursor) -> None:
             score_before_away INTEGER,
             score_after_home INTEGER,
             score_after_away INTEGER,
+            team_score_before INTEGER,
+            opponent_score_before INTEGER,
+            team_score_after INTEGER,
+            opponent_score_after INTEGER,
+            final_team_score INTEGER,
+            final_opponent_score INTEGER,
+            outcome_changed INTEGER,
             final_score_home INTEGER,
             final_score_away INTEGER,
             season INTEGER
@@ -197,6 +224,11 @@ def _ensure_columns(cur: sqlite3.Cursor) -> None:
     cur.execute("PRAGMA table_info(buzzerbeaters)")
     cols = {row[1] for row in cur.fetchall()}
     additions = {
+        "record_id": "TEXT",
+        "moment_id": "TEXT",
+        "perspective": "TEXT",
+        "scoring_team_id": "INTEGER",
+        "scoring_team_name": "TEXT",
         "event_kind": "TEXT",
         "shot_type": "TEXT",
         "shot_type_label": "TEXT",
@@ -210,6 +242,13 @@ def _ensure_columns(cur: sqlite3.Cursor) -> None:
         "score_before_away": "INTEGER",
         "score_after_home": "INTEGER",
         "score_after_away": "INTEGER",
+        "team_score_before": "INTEGER",
+        "opponent_score_before": "INTEGER",
+        "team_score_after": "INTEGER",
+        "opponent_score_after": "INTEGER",
+        "final_team_score": "INTEGER",
+        "final_opponent_score": "INTEGER",
+        "outcome_changed": "INTEGER",
         "final_score_home": "INTEGER",
         "final_score_away": "INTEGER",
         "season": "INTEGER",
@@ -221,7 +260,7 @@ def _ensure_columns(cur: sqlite3.Cursor) -> None:
     # Ensure conflict target used by ON CONFLICT(...) exists on legacy DBs.
     cur.execute("PRAGMA index_list(buzzerbeaters)")
     indexes = [row[1] for row in cur.fetchall() if row[2]]
-    key_cols = ["match_id", "team_id", "player_id", "period", "game_clock"]
+    key_cols = ["record_id"]
     has_unique_key = False
     for index_name in indexes:
         cur.execute(f"PRAGMA index_info({index_name!r})")
@@ -233,7 +272,7 @@ def _ensure_columns(cur: sqlite3.Cursor) -> None:
         cur.execute(
             """
             CREATE UNIQUE INDEX IF NOT EXISTS idx_buzzerbeaters_conflict_key
-            ON buzzerbeaters(match_id, team_id, player_id, period, game_clock)
+            ON buzzerbeaters(record_id)
             """
         )
 
@@ -385,17 +424,23 @@ def main() -> None:
             task_id = progress.add_task(f"Season {season}", total=len(completed))
         for mid in completed:
             try:
-                hits, ht, at = find_buzzerbeaters(mid)
+                play_by_play = build_play_by_play_export(mid, get_xml_text(mid))
+                perspective_rows = extract_team_perspective_moments(
+                    mid,
+                    play_by_play,
+                    season=season,
+                    match_type=match_types.get(mid),
+                    final_score=match_scores.get(mid),
+                )
             except Exception:
                 skipped += 1
                 if progress and task_id is not None:
                     progress.advance(task_id)
                 continue
-            for ev in hits:
-                ev.period = ev.period if hasattr(ev, "period") else None
-            total_hits += len(hits)
+            total_hits += len({row.moment_id for row in perspective_rows})
             total_inserted += _save_hits(
-                str(db_path), mid, match_types.get(mid), match_scores.get(mid), season, hits, ht, at
+                str(db_path),
+                [row.to_dict() for row in perspective_rows],
             )
             if progress and task_id is not None:
                 progress.advance(task_id)

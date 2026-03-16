@@ -43,6 +43,7 @@ py-modules = [
     "game",
     "main",
     "match_package",
+    "moments",
     "player",
     "shot_chart",
     "stats",
