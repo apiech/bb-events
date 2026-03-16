@@ -5,6 +5,7 @@ description = "BuzzerBeater match stats and event extractor"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "bb-xml-api-client",
     "requests",
     "tabulate",
     "Pillow",
@@ -21,7 +22,35 @@ bb-team-info = "bb_events.cli:team_info"
 bb-team-buzzerbeaters = "bb_events.cli:team_buzzerbeaters"
 bb-team-shot-distance-hist = "bb_events.cli:team_shot_distance_hist"
 bb-buzzerbeater-descriptions = "bb_events.cli:buzzerbeater_descriptions"
+bb-match-package = "bb_events.cli:match_package"
 
 [build-system]
-requires = ["uv_build>=0.8.2,<0.9.0"]
-build-backend = "uv_build"
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = [
+    "bb_xml_client",
+    "bbapi",
+    "buzzerbeater_descriptions",
+    "buzzerbeaters",
+    "clocks",
+    "comments",
+    "debug_ot_buzzers",
+    "event",
+    "event_types",
+    "first_active_match",
+    "game",
+    "main",
+    "match_package",
+    "player",
+    "shot_chart",
+    "stats",
+    "team",
+    "team_buzzerbeaters",
+    "team_info",
+    "team_shot_distance_hist",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

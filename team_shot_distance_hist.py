@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import requests
 
+from bb_xml_client import get_client
 from comments import Comments
 from event import ShotEvent, convert
 from main import get_xml_text, parse_xml
@@ -31,29 +32,16 @@ def _load_env(path: str = ".env") -> None:
 
 
 def _login(session: requests.Session) -> None:
-    username = os.getenv("BB_USERNAME")
-    security_code = os.getenv("BB_SECURITY_CODE")
-    if not username or not security_code:
-        raise SystemExit("Missing BB_USERNAME or BB_SECURITY_CODE in environment")
-    resp = session.get(
-        "http://bbapi.buzzerbeater.com/login.aspx",
-        params={"login": username, "code": security_code},
-    )
-    resp.raise_for_status()
+    _load_env()
+    get_client()
 
 
 def _current_season(session: requests.Session) -> int:
-    resp = session.get("http://bbapi.buzzerbeater.com/seasons.aspx")
-    resp.raise_for_status()
-    root = ET.fromstring(resp.text)
-    seasons = []
-    for elem in root.findall(".//season"):
-        sid = elem.get("id")
-        if not sid or not sid.isdigit():
-            continue
-        start = elem.findtext("start") or ""
-        finish = elem.findtext("finish") or ""
-        seasons.append((int(sid), start, finish))
+    seasons = [
+        (season.id, season.start or "", season.finish or "")
+        for season in get_client().get_seasons().seasons
+        if season.id is not None
+    ]
     if not seasons:
         raise RuntimeError("No seasons found")
     today = date.today()
@@ -69,40 +57,19 @@ def _current_season(session: requests.Session) -> int:
 
 
 def _all_seasons(session: requests.Session) -> list[int]:
-    resp = session.get("http://bbapi.buzzerbeater.com/seasons.aspx")
-    resp.raise_for_status()
-    root = ET.fromstring(resp.text)
-    seasons = []
-    for elem in root.findall(".//season"):
-        sid = elem.get("id")
-        if not sid or not sid.isdigit():
-            continue
-        seasons.append(int(sid))
-    return sorted(seasons)
+    return sorted(
+        season.id for season in get_client().get_seasons().seasons if season.id is not None
+    )
 
 
 def _schedule_matches(session: requests.Session, team_id: int, season: int):
-    resp = session.get(
-        "http://bbapi.buzzerbeater.com/schedule.aspx",
-        params={"teamid": team_id, "season": season},
-    )
-    resp.raise_for_status()
-    root = ET.fromstring(resp.text)
     matches = []
-    for match in root.findall(".//match"):
-        mid = match.get("id")
-        start = match.get("start")
-        home = match.find("./homeTeam/score")
-        away = match.find("./awayTeam/score")
-        if not mid or not start:
+    for match in get_client().get_schedule(team_id=team_id, season=season).matches:
+        if match.id is None or match.start is None:
             continue
-        if home is None or away is None or not (home.text or "").strip() or not (away.text or "").strip():
+        if match.home_team.score is None or match.away_team.score is None:
             continue
-        try:
-            mid_int = int(mid)
-        except ValueError:
-            continue
-        matches.append((mid_int, start))
+        matches.append((match.id, match.start))
     return matches
 
 

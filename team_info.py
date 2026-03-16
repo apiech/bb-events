@@ -6,6 +6,8 @@ import xml.etree.ElementTree as ET
 import requests
 from bs4 import BeautifulSoup
 
+from bb_xml_client import get_client
+
 
 def _load_env(path: str = ".env") -> None:
     if not os.path.exists(path):
@@ -21,40 +23,21 @@ def _load_env(path: str = ".env") -> None:
 
 
 def _login(session: requests.Session) -> None:
-    username = os.getenv("BB_USERNAME")
-    security_code = os.getenv("BB_SECURITY_CODE")
-    if not username or not security_code:
-        raise SystemExit("Missing BB_USERNAME or BB_SECURITY_CODE in environment")
-    resp = session.get(
-        "http://bbapi.buzzerbeater.com/login.aspx",
-        params={"login": username, "code": security_code},
-    )
-    resp.raise_for_status()
+    _load_env()
+    get_client()
 
 
 def get_teaminfo(session: requests.Session, team_id: int) -> dict:
-    resp = session.get(
-        "http://bbapi.buzzerbeater.com/teaminfo.aspx", params={"teamid": team_id}
-    )
-    resp.raise_for_status()
-    root = ET.fromstring(resp.text)
-    team_elem = root.find(".//team")
-    if team_elem is None:
-        raise RuntimeError("teaminfo: missing team element")
-    team_name = team_elem.findtext("teamName") or ""
-    short_name = team_elem.findtext("shortName") or ""
-    league_elem = team_elem.find("league")
-    country_elem = team_elem.find("country")
-    bot_team = team_elem.find("botTeam") is not None
+    info = get_client().get_teaminfo(team_id)
     return {
         "team_id": team_id,
-        "team_name": team_name,
-        "short_name": short_name,
-        "league_id": int(league_elem.get("id")) if league_elem is not None else None,
-        "league_name": league_elem.text.strip() if league_elem is not None and league_elem.text else None,
-        "country_id": int(country_elem.get("id")) if country_elem is not None else None,
-        "country_name": country_elem.text.strip() if country_elem is not None and country_elem.text else None,
-        "is_bot": bot_team,
+        "team_name": info.team_name or "",
+        "short_name": info.short_name or "",
+        "league_id": info.league.id if info.league is not None else None,
+        "league_name": info.league.name if info.league is not None else None,
+        "country_id": info.country.id if info.country is not None else None,
+        "country_name": info.country.name if info.country is not None else None,
+        "is_bot": info.is_bot,
     }
 
 

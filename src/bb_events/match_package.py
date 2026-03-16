@@ -1,4 +1,4 @@
-from .match_package import (
+from match_package import (
     DEFAULT_PARSER_VERSION,
     SCHEMA_VERSION,
     build_match_package,

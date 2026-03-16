@@ -1,0 +1,86 @@
+{
+  "matchId": "123786926",
+  "type": "League",
+  "startTime": "2026-03-15T20:00:00.000Z",
+  "endTime": "2026-03-15T21:55:00.000Z",
+  "neutral": false,
+  "effortDelta": 0,
+  "attendance": {
+    "total": 8120
+  },
+  "homeTeam": {
+    "id": "163730",
+    "teamName": "Bulls Chicago 94",
+    "shortName": "Bulls",
+    "offStrategy": "Base",
+    "defStrategy": "ManToMan",
+    "score": 59,
+    "partialScores": [
+      14,
+      16,
+      15,
+      14
+    ],
+    "teamTotals": {
+      "pts": 59,
+      "fga": 67,
+      "fgm": 24,
+      "tpa": 18,
+      "tpm": 5
+    },
+    "ratings": {
+      "outsideScoring": 7.5,
+      "insideScoring": 6.9,
+      "outsideDefense": 6.7,
+      "insideDefense": 6.8,
+      "rebounding": 6.2,
+      "offensiveFlow": 6.5
+    },
+    "efficiency": {
+      "pp100": 82.1
+    },
+    "gdp": {
+      "focus": "Balanced.hit",
+      "pace": "Normal.hit"
+    },
+    "players": []
+  },
+  "awayTeam": {
+    "id": "235159",
+    "teamName": "Pony Slaystation",
+    "shortName": "Pony",
+    "offStrategy": "Push",
+    "defStrategy": "23Zone",
+    "score": 123,
+    "partialScores": [
+      29,
+      30,
+      34,
+      30
+    ],
+    "teamTotals": {
+      "pts": 123,
+      "fga": 81,
+      "fgm": 47,
+      "tpa": 22,
+      "tpm": 12
+    },
+    "ratings": {
+      "outsideScoring": 11.4,
+      "insideScoring": 10.3,
+      "outsideDefense": 8.7,
+      "insideDefense": 8.9,
+      "rebounding": 8.2,
+      "offensiveFlow": 9.6
+    },
+    "efficiency": {
+      "pp100": 127.4
+    },
+    "gdp": {
+      "focus": "Inside.miss",
+      "pace": "Slow.hit"
+    },
+    "players": []
+  },
+  "details": {}
+}

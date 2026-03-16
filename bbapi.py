@@ -1,267 +1,173 @@
-from typing import Set
-import requests
-import xml.etree.ElementTree as xml
-from pprint import pprint
+from pathlib import Path
+
+from bb_xml_client import get_client
 from team import Team
 from player import Player
 from stats import *
-from os.path import exists
 
 
-class Network:
-    def __init__(self):
-        self.cookies = None
-
-    def first_get(self, url, parameters=None):
-        r = requests.get(url, cookies=self.cookies, params=parameters)
-        self.cookies = r.cookies
-        return r.text
-
-    def get(self, url, parameters=None):
-        r = requests.get(url, cookies=self.cookies, params=parameters)
-        return r.text
+def _int_value(value) -> int:
+    if value is None:
+        return 0
+    return int(value)
 
 
 class BBApi:
     def __init__(self, login=None, password=None):
-        if login is None or password is None:
-            return
-
         self.login = login
         self.password = password
-        self.logged_in = False
-        self.network = Network()
+        self.logged_in = login is not None and password is not None
+        self._client = get_client(login, password) if self.logged_in else None
 
-        p = {"login": self.login, "code": self.password}
-        data = self.network.first_get("http://bbapi.buzzerbeater.com/login.aspx", p)
-
-        root = xml.fromstring(data)
-        if root.tag == "bbapi":
-            if root.attrib["version"] != "1":
-                print("Error: Invalid BBApi Version!")
-
-        for child in root:
-            if child.tag == "loggedIn":
-                self.logged_in = True
-            elif child.tag == "error":
-                print("Error:", child.attrib["message"])
+    def _require_client(self):
+        if self._client is None:
+            raise RuntimeError("BBApi requires login and password for XML API access")
+        return self._client
 
     def arena(self, teamid=0):
-        p = {"teamid": teamid}
-        data = self.network.get("http://bbapi.buzzerbeater.com/arena.aspx", p)
-
-        root = xml.fromstring(data)
-        arena = root.find("arena")
-        name = arena.find("name")
-
-        arena_name = name.text
+        arena = self._require_client().get_arena(teamid or None)
+        arena_name = arena.name
         arena_seats, arena_expansion = {}, {}
-
-        seats = arena.find("seats")
-        for seat in seats:
-            arena_seats[seat.tag] = (
-                int(seat.text),
+        for seat_name, seat in arena.seats.items():
+            arena_seats[seat_name] = (
+                _int_value(seat.capacity),
                 {
-                    "price": int(seat.attrib["price"]),
-                    "nextPrice": int(seat.attrib["nextPrice"]),
+                    "price": _int_value(seat.price),
+                    "nextPrice": _int_value(seat.next_price),
                 },
             )
-
-        seats = arena.find("expansion")
-        if seats is not None:
-            arena_expansion["daysLeft"] = int(seats.attrib["daysLeft"])
-            for seat in seats:
-                arena_expansion[seat.tag] = int(seat.text)
+        if arena.expansion is not None:
+            arena_expansion["daysLeft"] = _int_value(arena.expansion.days_left)
+            for seat_name, seat_count in arena.expansion.sections.items():
+                arena_expansion[seat_name] = seat_count
 
         return arena_name, arena_seats, arena_expansion
 
     def get_xml_boxscore(self, matchid) -> str:
-
-        path = f"matches/boxscore_{matchid}.xml"
-
-        if exists(path):
-            with open(path, mode="r", encoding='utf-8') as f:
-                return f.read()
-        else:
-            p = {"matchid": matchid}
-            text = self.network.get("http://bbapi.buzzerbeater.com/boxscore.aspx", p)
-
-            with open(path, mode="w", encoding='utf-8') as f:
-                f.write(text)
-
-            return text
+        path = Path("matches") / f"boxscore_{matchid}.xml"
+        if path.exists():
+            return path.read_text(encoding="utf-8")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        text = self._require_client().request_xml("boxscore.aspx", {"matchid": matchid})
+        path.write_text(text, encoding="utf-8")
+        return text
 
     def get_xml_standings(self, leagueid: int, season: int) -> str:
-
-        path = f"matches/standings_{leagueid}_{season}.xml"
-
-        if exists(path):
-            with open(path, mode="r", encoding='utf-8') as f:
-                return f.read()
-        else:
-            p = {"leagueid": str(leagueid), "season": str(season)}
-            text = self.network.get("http://bbapi.buzzerbeater.com/standings.aspx", p)
-
-            with open(path, mode="w", encoding='utf-8') as f:
-                f.write(text)
-
-            return text
+        path = Path("matches") / f"standings_{leagueid}_{season}.xml"
+        if path.exists():
+            return path.read_text(encoding="utf-8")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        text = self._require_client().request_xml(
+            "standings.aspx",
+            {"leagueid": str(leagueid), "season": str(season)},
+        )
+        path.write_text(text, encoding="utf-8")
+        return text
 
     def get_xml_schedule(self, teamid, season) -> str:
-
-        path = f"matches/schedule_{teamid}_{season}.xml"
-
-        if exists(path):
-            with open(path, mode="r", encoding='utf-8') as f:
-                return f.read()
-        else:
-            p = {"teamid": teamid, "season": season}
-            text = self.network.get("http://bbapi.buzzerbeater.com/schedule.aspx", p)
-
-            with open(path, mode="w", encoding='utf-8') as f:
-                f.write(text)
-
-            return text
+        path = Path("matches") / f"schedule_{teamid}_{season}.xml"
+        if path.exists():
+            return path.read_text(encoding="utf-8")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        text = self._require_client().request_xml(
+            "schedule.aspx",
+            {"teamid": teamid, "season": season},
+        )
+        path.write_text(text, encoding="utf-8")
+        return text
 
     def player(self, playerid) -> str:
-        p = {"playerid": playerid}
-        data = self.network.get("http://bbapi.buzzerbeater.com/player.aspx", p)
-
-        root = xml.fromstring(data)
-        position = root.find("./player/bestPosition")
-
-        return position.text
+        response = self._require_client().get_player(playerid)
+        return response.best_position or ""
 
     def strategy(self, matchid=0):
-        data = self.get_xml_boxscore(matchid)
-
-        root = xml.fromstring(data)
-        away_off = root.find("./match/awayTeam/offStrategy").text
-        away_def = root.find("./match/awayTeam/defStrategy").text
-        home_off = root.find("./match/homeTeam/offStrategy").text
-        home_def = root.find("./match/homeTeam/defStrategy").text
-
-        return away_off, away_def, home_off, home_def
+        data = self._require_client().get_boxscore(matchid or None)
+        return (
+            data.away_team.off_strategy or "",
+            data.away_team.def_strategy or "",
+            data.home_team.off_strategy or "",
+            data.home_team.def_strategy or "",
+        )
 
     def boxscore(self, matchid=0) -> list[Team]:
-        data = self.get_xml_boxscore(matchid)
-
-        root = xml.fromstring(data)
-        away = root.find("./match/awayTeam")
-        home = root.find("./match/homeTeam")
-        xml_teams = [away, home]
+        response = self._require_client().get_boxscore(matchid or None)
         bb_teams = [Team(), Team()]
-
-        for index, xml_team in enumerate(xml_teams):
-            bb_team = bb_teams[index]
-
-            assert isinstance(xml_team, xml.Element), ""
-            bb_team.id = int(xml_team.attrib["id"])
-            bb_team.name = xml_team.find("./teamName").text
-
-            bb_team.off_strategy = xml_team.find("./offStrategy").text
-            bb_team.def_strategy = xml_team.find("./defStrategy").text
-
-            quarters = xml_team.find("./score").attrib["partials"].split(",")
-            for i in range(len(quarters)):
+        for bb_team, source_team in zip(bb_teams, [response.away_team, response.home_team]):
+            bb_team.id = _int_value(source_team.id)
+            bb_team.name = source_team.team_name or ""
+            bb_team.off_strategy = source_team.off_strategy or ""
+            bb_team.def_strategy = source_team.def_strategy or ""
+            for _ in range(len(source_team.partial_scores)):
                 bb_team.push_stat_sheet()
-            for num, pts in enumerate(quarters):
+            for num, pts in enumerate(source_team.partial_scores):
                 bb_team.stats.qtr[num].sheet[Statistic.Points] = pts
 
-            totals = xml_team.find("./boxscore/teamTotals")
+            totals = source_team.team_totals
 
-            def add_team_stat(stat: Statistic, val: int):
-                bb_team.stats.full.sheet[stat] = val
+            def add_team_stat(stat: Statistic, key: str):
+                bb_team.stats.full.sheet[stat] = _int_value(totals.get(key))
 
-            def team_stat(s: str) -> int:
-                return int(totals.find(s).text)
+            add_team_stat(Statistic.Points, "pts")
+            add_team_stat(Statistic.FieldGoalsAtt, "fga")
+            add_team_stat(Statistic.FieldGoalsMade, "fgm")
+            add_team_stat(Statistic.ThreePointsAtt, "tpa")
+            add_team_stat(Statistic.ThreePointsMade, "tpm")
+            add_team_stat(Statistic.FreeThrowsAtt, "fta")
+            add_team_stat(Statistic.FreeThrowsMade, "ftm")
+            add_team_stat(Statistic.OffRebounds, "oreb")
+            bb_team.stats.full.sheet[Statistic.DefRebounds] = _int_value(totals.get("reb")) - _int_value(totals.get("oreb"))
+            add_team_stat(Statistic.Assists, "ast")
+            add_team_stat(Statistic.Turnovers, "to")
+            add_team_stat(Statistic.Steals, "stl")
+            add_team_stat(Statistic.Blocks, "blk")
+            add_team_stat(Statistic.Fouls, "pf")
 
-            add_team_stat(Statistic.Points, team_stat("./pts"))
-            add_team_stat(Statistic.FieldGoalsAtt, team_stat("./fga"))
-            add_team_stat(Statistic.FieldGoalsMade, team_stat("./fgm"))
-            add_team_stat(Statistic.ThreePointsAtt, team_stat("./tpa"))
-            add_team_stat(Statistic.ThreePointsMade, team_stat("./tpm"))
-            add_team_stat(Statistic.FreeThrowsAtt, team_stat("./fta"))
-            add_team_stat(Statistic.FreeThrowsMade, team_stat("./ftm"))
-            add_team_stat(Statistic.OffRebounds, team_stat("./oreb"))
-            add_team_stat(
-                Statistic.DefRebounds, team_stat("./reb") - team_stat("./oreb")
-            )
-            add_team_stat(Statistic.Assists, team_stat("./ast"))
-            add_team_stat(Statistic.Turnovers, team_stat("./to"))
-            add_team_stat(Statistic.Steals, team_stat("./stl"))
-            add_team_stat(Statistic.Blocks, team_stat("./blk"))
-            add_team_stat(Statistic.Fouls, team_stat("./pf"))
-
-            players = xml_team.findall("./boxscore/player")
-            for xml_player in players:
+            for source_player in source_team.players:
                 bb_player = Player()
-
-                assert isinstance(xml_player, xml.Element), ""
-                bb_player.id = int(xml_player.attrib["id"])
-                bb_player.name = f"{xml_player.find('./firstName').text} {xml_player.find('./lastName').text}"
-
-                perf = xml_player.find("./performance")
-                mins = xml_player.find("./minutes")
-
-                def add_stat(s: Statistic, val: int):
-                    bb_player.stats.full.sheet[s] = val
-
-                def stat(s: str) -> int:
-                    return int(perf.find(s).text)
-
-                def minutes(s: str) -> int:
-                    return int(mins.find(s).text)
-
-                add_stat(Statistic.SecsPG, minutes("./PG") * 60)
-                add_stat(Statistic.SecsSG, minutes("./SG") * 60)
-                add_stat(Statistic.SecsSF, minutes("./SF") * 60)
-                add_stat(Statistic.SecsPF, minutes("./PF") * 60)
-                add_stat(Statistic.SecsC, minutes("./C") * 60)
-
-                add_stat(Statistic.Points, stat("./pts"))
-                add_stat(Statistic.FieldGoalsAtt, stat("./fga"))
-                add_stat(Statistic.FieldGoalsMade, stat("./fgm"))
-                add_stat(Statistic.ThreePointsAtt, stat("./tpa"))
-                add_stat(Statistic.ThreePointsMade, stat("./tpm"))
-                add_stat(Statistic.FreeThrowsAtt, stat("./fta"))
-                add_stat(Statistic.FreeThrowsMade, stat("./ftm"))
-                add_stat(Statistic.OffRebounds, stat("./oreb"))
-                add_stat(
-                    Statistic.DefRebounds,
-                    (stat("./reb") - stat("./oreb")),
-                )
-                add_stat(Statistic.Assists, stat("./ast"))
-                add_stat(Statistic.Turnovers, stat("./to"))
-                add_stat(Statistic.Steals, stat("./stl"))
-                add_stat(Statistic.Blocks, stat("./blk"))
-                add_stat(Statistic.Fouls, stat("./pf"))
+                bb_player.id = _int_value(source_player.id)
+                bb_player.name = " ".join(
+                    part for part in [source_player.first_name, source_player.last_name] if part
+                ).strip()
+                minutes = source_player.minutes_by_position
+                bb_player.stats.full.sheet[Statistic.SecsPG] = _int_value(minutes.get("PG")) * 60
+                bb_player.stats.full.sheet[Statistic.SecsSG] = _int_value(minutes.get("SG")) * 60
+                bb_player.stats.full.sheet[Statistic.SecsSF] = _int_value(minutes.get("SF")) * 60
+                bb_player.stats.full.sheet[Statistic.SecsPF] = _int_value(minutes.get("PF")) * 60
+                bb_player.stats.full.sheet[Statistic.SecsC] = _int_value(minutes.get("C")) * 60
+                perf = source_player.performance
+                bb_player.stats.full.sheet[Statistic.Points] = _int_value(perf.get("pts"))
+                bb_player.stats.full.sheet[Statistic.FieldGoalsAtt] = _int_value(perf.get("fga"))
+                bb_player.stats.full.sheet[Statistic.FieldGoalsMade] = _int_value(perf.get("fgm"))
+                bb_player.stats.full.sheet[Statistic.ThreePointsAtt] = _int_value(perf.get("tpa"))
+                bb_player.stats.full.sheet[Statistic.ThreePointsMade] = _int_value(perf.get("tpm"))
+                bb_player.stats.full.sheet[Statistic.FreeThrowsAtt] = _int_value(perf.get("fta"))
+                bb_player.stats.full.sheet[Statistic.FreeThrowsMade] = _int_value(perf.get("ftm"))
+                bb_player.stats.full.sheet[Statistic.OffRebounds] = _int_value(perf.get("oreb"))
+                bb_player.stats.full.sheet[Statistic.DefRebounds] = _int_value(perf.get("reb")) - _int_value(perf.get("oreb"))
+                bb_player.stats.full.sheet[Statistic.Assists] = _int_value(perf.get("ast"))
+                bb_player.stats.full.sheet[Statistic.Turnovers] = _int_value(perf.get("to"))
+                bb_player.stats.full.sheet[Statistic.Steals] = _int_value(perf.get("stl"))
+                bb_player.stats.full.sheet[Statistic.Blocks] = _int_value(perf.get("blk"))
+                bb_player.stats.full.sheet[Statistic.Fouls] = _int_value(perf.get("pf"))
                 bb_team.players.append(bb_player)
-
         return bb_teams
 
     def standings(self, league_id: int, season: int):
-        data = self.get_xml_standings(league_id, season)
-
-        root = xml.fromstring(data)
-        teams = root.findall("./standings/regularSeason/conference/team")
-        team_ids = [team.attrib["id"] for team in teams]
-
+        data = self._require_client().get_standings(league_id=league_id, season=season)
+        team_ids = []
+        for conference in data.conferences:
+            for team in conference.teams:
+                if team.id is not None:
+                    team_ids.append(str(team.id))
         return team_ids
 
     def schedule(self, team_id, season):
-        data = self.get_xml_schedule(team_id, season)
-
-        root = xml.fromstring(data)
-        matches = root.findall("./schedule/match")
-
-        match_ids = [
-            match.attrib["id"]
-            for match in matches
-            if match.attrib["type"].startswith("league")
+        data = self._require_client().get_schedule(team_id=team_id, season=season)
+        return [
+            str(match.id)
+            for match in data.matches
+            if match.id is not None and (match.type or "").startswith("league")
         ]
-
-        return match_ids
 
 
 def prefetch_data(

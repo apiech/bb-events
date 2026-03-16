@@ -331,7 +331,7 @@ class Game:
             assert bbteams[0] == self.teams[1]
             assert bbteams[1] == self.teams[0]
 
-    def save(self, filename):
+    def to_dict(self):
         teams = []
         for tid, team in enumerate(self.teams):
             players = []
@@ -367,6 +367,11 @@ class Game:
             "teamAway": teams[1],
             "events": events,
         }
+
+        return game
+
+    def save(self, filename):
+        game = self.to_dict()
 
         with open(filename, "w", encoding='utf-8') as f:
             json.dump(game, f, indent=4, ensure_ascii=False)

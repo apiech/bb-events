@@ -5,6 +5,7 @@ from datetime import datetime
 
 import requests
 
+from bb_xml_client import get_client
 from main import get_xml_text
 
 
@@ -22,35 +23,16 @@ def _load_env(path: str = ".env") -> None:
 
 
 def _login(session: requests.Session) -> None:
-    username = os.getenv("BB_USERNAME")
-    security_code = os.getenv("BB_SECURITY_CODE")
-    if not username or not security_code:
-        raise SystemExit("Missing BB_USERNAME or BB_SECURITY_CODE in environment")
-    resp = session.get(
-        "http://bbapi.buzzerbeater.com/login.aspx",
-        params={"login": username, "code": security_code},
-    )
-    resp.raise_for_status()
+    _load_env()
+    get_client()
 
 
 def _schedule_matches(session: requests.Session, team_id: int, season: int):
-    resp = session.get(
-        "http://bbapi.buzzerbeater.com/schedule.aspx",
-        params={"teamid": team_id, "season": season},
-    )
-    resp.raise_for_status()
-    root = ET.fromstring(resp.text)
     matches = []
-    for match in root.findall(".//match"):
-        mid = match.get("id")
-        start = match.get("start")
-        if not mid or not start:
+    for match in get_client().get_schedule(team_id=team_id, season=season).matches:
+        if match.id is None or match.start is None:
             continue
-        try:
-            mid_int = int(mid)
-        except ValueError:
-            continue
-        matches.append((mid_int, start))
+        matches.append((match.id, match.start))
     return matches
 
 

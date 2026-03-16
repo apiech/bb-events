@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bb.local/schemas/match-package-v1.schema.json",
+  "title": "MatchPackageV1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "matchId",
+    "parserVersion",
+    "contentHash",
+    "sourceArtifacts",
+    "match",
+    "boxscore",
+    "playByPlay",
+    "ingestMetadata"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "MatchPackageV1"
+    },
+    "matchId": {
+      "type": "string"
+    },
+    "parserVersion": {
+      "type": "string"
+    },
+    "contentHash": {
+      "type": "string"
+    },
+    "sourceArtifacts": {
+      "type": "object",
+      "required": ["boxscoreKey", "reportKey"],
+      "properties": {
+        "boxscoreKey": {
+          "type": ["string", "null"]
+        },
+        "reportKey": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "match": {
+      "type": "object"
+    },
+    "boxscore": {
+      "type": "object"
+    },
+    "playByPlay": {
+      "type": "object"
+    },
+    "ingestMetadata": {
+      "type": "object",
+      "required": ["season"],
+      "properties": {
+        "season": {
+          "type": ["integer", "null"]
+        },
+        "generatedAt": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

@@ -1,69 +1,42 @@
 from __future__ import annotations
 
-import importlib.util
-import sys
-from pathlib import Path
-from types import ModuleType
-
-
-def _load_module(path: Path, name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(name, path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Unable to load module from {path}")
-    module = importlib.util.module_from_spec(spec)
-    cwd = str(Path.cwd())
-    if cwd not in sys.path:
-        sys.path.insert(0, cwd)
-    spec.loader.exec_module(module)
-    return module
+import buzzerbeater_descriptions as buzzerbeater_descriptions_module
+import buzzerbeaters as buzzerbeaters_module
+import event as event_module
+import main as main_module
+import match_package as match_package_module
+import team_buzzerbeaters as team_buzzerbeaters_module
+import team_info as team_info_module
+import team_shot_distance_hist as team_shot_distance_hist_module
 
 
 def main() -> None:
-    # Load root-level main.py so users can run from repo root without refactor.
-    module = _load_module(Path.cwd() / "main.py", "_bbinsider_main")
-    module.main()
+    main_module.main()
 
 
 def shotchart() -> None:
-    # Load root-level event.py so users can run from repo root without refactor.
-    module = _load_module(Path.cwd() / "event.py", "_bbinsider_event")
-    module.shotchart_main()
+    event_module.shotchart_main()
 
 
 def buzzerbeaters() -> None:
-    # Load root-level buzzerbeaters.py so users can run from repo root without refactor.
-    module = _load_module(Path.cwd() / "buzzerbeaters.py", "_bbinsider_buzzerbeaters")
-    module.main()
+    buzzerbeaters_module.main()
 
 
 def team_info() -> None:
-    # Load root-level team_info.py from repo root.
-    module = _load_module(Path.cwd() / "team_info.py", "_bbinsider_team_info")
-    module.main()
+    team_info_module.main()
 
 
 def team_buzzerbeaters() -> None:
-    # Load root-level team_buzzerbeaters.py from repo root.
-    module = _load_module(
-        Path.cwd() / "team_buzzerbeaters.py",
-        "_bbinsider_team_buzzerbeaters",
-    )
-    module.main()
+    team_buzzerbeaters_module.main()
 
 
 def team_shot_distance_hist() -> None:
-    # Load root-level team_shot_distance_hist.py from repo root.
-    module = _load_module(
-        Path.cwd() / "team_shot_distance_hist.py",
-        "_bbinsider_team_shot_distance_hist",
-    )
-    module.main()
+    team_shot_distance_hist_module.main()
 
 
 def buzzerbeater_descriptions() -> None:
-    # Load root-level buzzerbeater_descriptions.py from repo root.
-    module = _load_module(
-        Path.cwd() / "buzzerbeater_descriptions.py",
-        "_bbinsider_buzzerbeater_descriptions",
-    )
-    module.main()
+    buzzerbeater_descriptions_module.main()
+
+
+def match_package() -> None:
+    match_package_module.main()

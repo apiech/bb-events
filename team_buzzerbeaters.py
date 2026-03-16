@@ -8,6 +8,7 @@ from pathlib import Path
 
 import requests
 
+from bb_xml_client import get_client
 from buzzerbeaters import find_buzzerbeaters
 from first_active_match import _schedule_matches, _parse_team_name, _sort_key, _login, _load_env
 from main import get_xml_text
@@ -35,17 +36,11 @@ def _load_env(path: str = ".env") -> None:
 
 
 def _current_season(session: requests.Session) -> int:
-    resp = session.get("http://bbapi.buzzerbeater.com/seasons.aspx")
-    resp.raise_for_status()
-    root = ET.fromstring(resp.text)
-    seasons = []
-    for elem in root.findall(".//season"):
-        sid = elem.get("id")
-        if not sid or not sid.isdigit():
-            continue
-        start = elem.findtext("start") or ""
-        finish = elem.findtext("finish") or ""
-        seasons.append((int(sid), start, finish))
+    seasons = [
+        (season.id, season.start or "", season.finish or "")
+        for season in get_client().get_seasons().seasons
+        if season.id is not None
+    ]
     if not seasons:
         raise RuntimeError("No seasons found")
     today = date.today()
@@ -61,29 +56,15 @@ def _current_season(session: requests.Session) -> int:
 
 
 def _completed_matches(session: requests.Session, team_id: int, season: int):
-    resp = session.get(
-        "http://bbapi.buzzerbeater.com/schedule.aspx",
-        params={"teamid": team_id, "season": season},
-    )
-    resp.raise_for_status()
-    root = ET.fromstring(resp.text)
     completed = []
     match_types = {}
     match_scores = {}
     match_seasons = {}
-    for match in root.findall(".//match"):
-        mid = match.get("id")
-        mtype = match.get("type")
-        home = match.find("./homeTeam/score")
-        away = match.find("./awayTeam/score")
-        if mid and home is not None and away is not None and (home.text or "").strip() and (away.text or "").strip():
-            mid_int = int(mid)
-            completed.append(mid_int)
-            match_types[mid_int] = mtype
-            try:
-                match_scores[mid_int] = (int(home.text.strip()), int(away.text.strip()))
-            except Exception:
-                match_scores[mid_int] = (None, None)
+    for match in get_client().get_schedule(team_id=team_id, season=season).matches:
+        if match.id is not None and match.home_team.score is not None and match.away_team.score is not None:
+            completed.append(match.id)
+            match_types[match.id] = match.type
+            match_scores[match.id] = (match.home_team.score, match.away_team.score)
     return completed, match_types, match_scores, match_seasons
 
 
